@@ -1,0 +1,9 @@
+*~
+*.swp
+*.swo
+objs
+Makefile
+tags
+build.sh
+test.stp
+gen-patch
