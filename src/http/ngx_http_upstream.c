@@ -1418,6 +1418,8 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     /* rc == NGX_OK */
 
+    u->request_all_sent = 1;
+
     if (c->tcp_nopush == NGX_TCP_NOPUSH_SET) {
         if (ngx_tcp_push(c->fd) == NGX_ERROR) {
             ngx_log_error(NGX_LOG_CRIT, c->log, ngx_socket_errno,
@@ -1484,7 +1486,7 @@ ngx_http_upstream_send_request_handler(ngx_http_request_t *r,
 
 #endif
 
-    if (u->header_sent) {
+    if (u->request_all_sent) {
         u->write_event_handler = ngx_http_upstream_dummy_handler;
 
         (void) ngx_handle_write_event(c->write, 0);
