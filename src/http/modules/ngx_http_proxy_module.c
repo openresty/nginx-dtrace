@@ -3023,8 +3023,10 @@ ngx_http_proxy_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
     if (conf->upstream.upstream || conf->proxy_lengths) {
         clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-        if (clcf->handler == NULL && clcf->lmt_excpt) {
-            clcf->handler = ngx_http_proxy_handler;
+        if (clcf->handler == NULL) {
+            if (clcf->lmt_excpt) {
+                clcf->handler = ngx_http_proxy_handler;
+            }
             conf->location = prev->location;
         }
     }

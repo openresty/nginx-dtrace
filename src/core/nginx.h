@@ -11,7 +11,7 @@
 
 #define nginx_version      1002001
 #define NGINX_VERSION      "1.2.1"
-#define NGINX_VER          "nginx/" NGINX_VERSION
+#define NGINX_VER          "ngx_openresty/" NGINX_VERSION ".unknown"
 
 #define NGINX_VAR          "NGINX"
 #define NGX_OLDPID_EXT     ".oldbin"

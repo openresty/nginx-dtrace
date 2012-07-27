@@ -2017,6 +2017,7 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
 {
     ngx_int_t                   rc;
     ngx_http_variable_t        *v;
+    ngx_http_variable_t        *value;
     ngx_http_core_main_conf_t  *cmcf;
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
@@ -2037,7 +2038,14 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
     }
 
     for (v = ngx_http_core_variables; v->name.len; v++) {
-        rc = ngx_hash_add_key(cmcf->variables_keys, &v->name, v,
+        value = ngx_palloc(cf->pool, sizeof(ngx_http_variable_t));
+        if (value == NULL) {
+            return NGX_ERROR;
+        }
+
+        *value = *v;
+
+        rc = ngx_hash_add_key(cmcf->variables_keys, &value->name, value,
                               NGX_HASH_READONLY_KEY);
 
         if (rc == NGX_OK) {
