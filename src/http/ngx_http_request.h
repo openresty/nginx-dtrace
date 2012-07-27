@@ -368,6 +368,9 @@ struct ngx_http_request_s {
     ngx_pool_t                       *pool;
     ngx_buf_t                        *header_in;
 
+    off_t                             content_length_n;
+                                          /* for discarding request body */
+
     ngx_http_headers_in_t             headers_in;
     ngx_http_headers_out_t            headers_out;
 

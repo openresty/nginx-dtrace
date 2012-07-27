@@ -287,6 +287,8 @@ ngx_http_init_request(ngx_event_t *rev)
 
         r->pipeline = hc->pipeline;
 
+        r->content_length_n = -1;
+
         if (hc->nbusy) {
             r->header_in = hc->busy[0];
         }
@@ -297,6 +299,8 @@ ngx_http_init_request(ngx_event_t *rev)
             ngx_http_close_connection(c);
             return;
         }
+
+        r->content_length_n = -1;
 
         hc->request = r;
     }

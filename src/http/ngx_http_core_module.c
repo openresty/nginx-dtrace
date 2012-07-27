@@ -2420,6 +2420,8 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     sr->request_body = r->request_body;
 
+    sr->content_length_n = -1;
+
     sr->method = NGX_HTTP_GET;
     sr->http_version = r->http_version;
 
