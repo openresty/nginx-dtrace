@@ -104,6 +104,7 @@ HTTP_FLV=NO
 HTTP_MP4=NO
 HTTP_GZIP_STATIC=NO
 HTTP_UPSTREAM_IP_HASH=YES
+HTTP_UPSTREAM_LEAST_CONN=YES
 HTTP_UPSTREAM_KEEPALIVE=YES
 
 # STUB
@@ -253,6 +254,8 @@ use the \"--without-http_limit_conn_module\" option instead"
         --without-http_empty_gif_module) HTTP_EMPTY_GIF=NO          ;;
         --without-http_browser_module)   HTTP_BROWSER=NO            ;;
         --without-http_upstream_ip_hash_module) HTTP_UPSTREAM_IP_HASH=NO ;;
+        --without-http_upstream_least_conn_module)
+                                         HTTP_UPSTREAM_LEAST_CONN=NO ;;
         --without-http_upstream_keepalive_module) HTTP_UPSTREAM_KEEPALIVE=NO ;;
 
         --with-http_perl_module)         HTTP_PERL=YES              ;;
@@ -395,6 +398,10 @@ cat << END
   --without-http_browser_module      disable ngx_http_browser_module
   --without-http_upstream_ip_hash_module
                                      disable ngx_http_upstream_ip_hash_module
+  --without-http_upstream_least_conn_module
+                                     disable ngx_http_upstream_least_conn_module
+  --without-http_upstream_keepalive_module
+                                     disable ngx_http_upstream_keepalive_module
 
   --with-http_perl_module            enable ngx_http_perl_module
   --with-perl_modules_path=PATH      set Perl modules path
