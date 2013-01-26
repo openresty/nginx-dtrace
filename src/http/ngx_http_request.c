@@ -94,6 +94,14 @@ ngx_http_header_t  ngx_http_headers_in[] = {
                  offsetof(ngx_http_headers_in_t, if_unmodified_since),
                  ngx_http_process_unique_header_line },
 
+    { ngx_string("If-Match"),
+                 offsetof(ngx_http_headers_in_t, if_match),
+                 ngx_http_process_unique_header_line },
+
+    { ngx_string("If-None-Match"),
+                 offsetof(ngx_http_headers_in_t, if_none_match),
+                 ngx_http_process_unique_header_line },
+
     { ngx_string("User-Agent"), offsetof(ngx_http_headers_in_t, user_agent),
                  ngx_http_process_user_agent },
 
@@ -288,8 +296,6 @@ ngx_http_init_request(ngx_event_t *rev)
 
         r->pipeline = hc->pipeline;
 
-        r->content_length_n = -1;
-
         if (hc->nbusy) {
             r->header_in = hc->busy[0];
         }
@@ -300,8 +306,6 @@ ngx_http_init_request(ngx_event_t *rev)
             ngx_http_close_connection(c);
             return;
         }
-
-        r->content_length_n = -1;
 
         hc->request = r;
     }
@@ -1575,17 +1579,9 @@ ngx_http_process_request_header(ngx_http_request_t *r)
         if (r->headers_in.content_length_n == NGX_ERROR) {
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                           "client sent invalid \"Content-Length\" header");
-            ngx_http_finalize_request(r, NGX_HTTP_LENGTH_REQUIRED);
+            ngx_http_finalize_request(r, NGX_HTTP_BAD_REQUEST);
             return NGX_ERROR;
         }
-    }
-
-    if (r->method & NGX_HTTP_PUT && r->headers_in.content_length_n == -1) {
-        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "client sent %V method without \"Content-Length\" header",
-                  &r->method_name);
-        ngx_http_finalize_request(r, NGX_HTTP_LENGTH_REQUIRED);
-        return NGX_ERROR;
     }
 
     if (r->method & NGX_HTTP_TRACE) {
@@ -1595,14 +1591,25 @@ ngx_http_process_request_header(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
-    if (r->headers_in.transfer_encoding
-        && ngx_strcasestrn(r->headers_in.transfer_encoding->value.data,
-                           "chunked", 7 - 1))
-    {
-        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "client sent \"Transfer-Encoding: chunked\" header");
-        ngx_http_finalize_request(r, NGX_HTTP_LENGTH_REQUIRED);
-        return NGX_ERROR;
+    if (r->headers_in.transfer_encoding) {
+        if (r->headers_in.transfer_encoding->value.len == 7
+            && ngx_strncasecmp(r->headers_in.transfer_encoding->value.data,
+                               (u_char *) "chunked", 7) == 0)
+        {
+            r->headers_in.content_length = NULL;
+            r->headers_in.content_length_n = -1;
+            r->headers_in.chunked = 1;
+
+        } else if (r->headers_in.transfer_encoding->value.len != 8
+            || ngx_strncasecmp(r->headers_in.transfer_encoding->value.data,
+                               (u_char *) "identity", 8) != 0)
+        {
+            ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                          "client sent unknown \"Transfer-Encoding\": \"%V\"",
+                          &r->headers_in.transfer_encoding->value);
+            ngx_http_finalize_request(r, NGX_HTTP_NOT_IMPLEMENTED);
+            return NGX_ERROR;
+        }
     }
 
     if (r->headers_in.connection_type == NGX_HTTP_CONNECTION_KEEP_ALIVE) {

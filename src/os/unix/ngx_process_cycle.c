@@ -355,6 +355,8 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "start worker processes");
 
+    ngx_memzero(&ch, sizeof(ngx_channel_t));
+
     ch.command = NGX_CMD_OPEN_CHANNEL;
 
     for (i = 0; i < n; i++) {
@@ -460,6 +462,8 @@ ngx_signal_worker_processes(ngx_cycle_t *cycle, int signo)
     ngx_err_t      err;
     ngx_channel_t  ch;
 
+    ngx_memzero(&ch, sizeof(ngx_channel_t));
+
 #if (NGX_BROKEN_SCM_RIGHTS)
 
     ch.command = 0;
@@ -560,6 +564,8 @@ ngx_reap_children(ngx_cycle_t *cycle)
     ngx_uint_t        live;
     ngx_channel_t     ch;
     ngx_core_conf_t  *ccf;
+
+    ngx_memzero(&ch, sizeof(ngx_channel_t));
 
     ch.command = NGX_CMD_CLOSE_CHANNEL;
     ch.fd = -1;

@@ -83,7 +83,8 @@ REGEX_SRCS=src/core/ngx_regex.c
 
 OPENSSL_MODULE=ngx_openssl_module
 OPENSSL_DEPS=src/event/ngx_event_openssl.h
-OPENSSL_SRCS=src/event/ngx_event_openssl.c
+OPENSSL_SRCS="src/event/ngx_event_openssl.c \
+              src/event/ngx_event_openssl_stapling.c"
 
 
 EVENT_MODULES="ngx_events_module ngx_event_core_module"
@@ -337,6 +338,10 @@ HTTP_CHARSET_SRCS=src/http/modules/ngx_http_charset_filter_module.c
 
 HTTP_GZIP_FILTER_MODULE=ngx_http_gzip_filter_module
 HTTP_GZIP_SRCS=src/http/modules/ngx_http_gzip_filter_module.c
+
+
+HTTP_GUNZIP_FILTER_MODULE=ngx_http_gunzip_filter_module
+HTTP_GUNZIP_SRCS=src/http/modules/ngx_http_gunzip_filter_module.c
 
 
 HTTP_SSI_FILTER_MODULE=ngx_http_ssi_filter_module

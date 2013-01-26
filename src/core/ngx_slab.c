@@ -657,7 +657,7 @@ ngx_slab_alloc_pages(ngx_slab_pool_t *pool, ngx_uint_t pages)
         }
     }
 
-    ngx_slab_error(pool, NGX_LOG_CRIT, "ngx_slab_alloc() failed: no memory");
+    ngx_slab_error(pool, NGX_LOG_INFO, "ngx_slab_alloc() failed: no memory");
 
     return NULL;
 }
