@@ -89,6 +89,10 @@ function ngx_chain_next(cl)
     return @cast(cl, "ngx_chain_t", "NGX_SBIN_PATH")->next
 }
 
+function ngx_buf_tag(b)
+{
+    return @cast(b, "ngx_buf_t", "NGX_SBIN_PATH")->tag
+}
 
 function ngx_buf_in_memory(b)
 {
@@ -198,9 +202,14 @@ function ngx_chain_dump:string (input)
             out .= "<flush>"
         }
 
+        tag = ngx_buf_tag(buf)
+        if (tag) {
+            out .= sprintf("<tag:%p>", tag)
+        }
+
         cl = ngx_chain_next(cl)
         if (cl) {
-            out .= sprintf(" ")
+            out .= " "
         }
     }
     return out
