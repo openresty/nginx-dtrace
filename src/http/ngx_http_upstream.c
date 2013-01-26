@@ -636,6 +636,14 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
 
 found:
 
+    if (uscf == NULL) {
+        ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0,
+                      "no upstream configuration");
+        ngx_http_upstream_finalize_request(r, u,
+                                           NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
     if (uscf->peer.init(r, uscf) != NGX_OK) {
         ngx_http_upstream_finalize_request(r, u,
                                            NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -1216,6 +1224,7 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     }
 
     u->request_sent = 0;
+    u->request_all_sent = 0;
 
     if (rc == NGX_AGAIN) {
         ngx_add_timer(c->write, u->conf->connect_timeout);
@@ -2393,7 +2402,7 @@ ngx_http_upstream_process_non_buffered_upstream(ngx_http_request_t *r,
 
     if (c->read->timedout) {
         ngx_connection_error(c, NGX_ETIMEDOUT, "upstream timed out");
-        ngx_http_upstream_finalize_request(r, u, 0);
+        ngx_http_upstream_finalize_request(r, u, NGX_HTTP_GATEWAY_TIME_OUT);
         return;
     }
 
@@ -2440,10 +2449,14 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
             if (u->busy_bufs == NULL) {
 
                 if (u->length == 0
-                    || upstream->read->eof
-                    || upstream->read->error)
+                    || (upstream->read->eof && u->headers_in.content_length_n == -1))
                 {
                     ngx_http_upstream_finalize_request(r, u, 0);
+                    return;
+                }
+
+                if (upstream->read->eof || upstream->read->error) {
+                    ngx_http_upstream_finalize_request(r, u, NGX_HTTP_BAD_GATEWAY);
                     return;
                 }
 
@@ -2720,7 +2733,16 @@ ngx_http_upstream_process_request(ngx_http_request_t *r)
 #if 0
             ngx_http_busy_unlock(u->conf->busy_lock, &u->busy_lock);
 #endif
-            ngx_http_upstream_finalize_request(r, u, 0);
+
+            if (p->upstream_done
+                || (p->upstream_eof && u->headers_in.content_length_n == -1))
+            {
+                ngx_http_upstream_finalize_request(r, u, 0);
+
+            } else {
+                ngx_http_upstream_finalize_request(r, u, NGX_HTTP_BAD_GATEWAY);
+            }
+
             return;
         }
     }
@@ -3083,6 +3105,13 @@ ngx_http_upstream_finalize_request(ngx_http_request_t *r,
         && rc != NGX_HTTP_REQUEST_TIME_OUT
         && (rc == NGX_ERROR || rc >= NGX_HTTP_SPECIAL_RESPONSE))
     {
+        if (rc == NGX_ERROR) {
+            r->headers_out.status = NGX_HTTP_INTERNAL_SERVER_ERROR;
+
+        } else {
+            r->headers_out.status = rc;
+        }
+
         rc = 0;
     }
 
@@ -3093,6 +3122,7 @@ ngx_http_upstream_finalize_request(ngx_http_request_t *r,
     r->connection->log->action = "sending to client";
 
     if (rc == 0
+        && !r->header_only
 #if (NGX_HTTP_CACHE)
         && !r->cached
 #endif
@@ -4114,6 +4144,7 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     value = cf->args->elts;
     u.host = value[1];
     u.no_resolve = 1;
+    u.no_port = 1;
 
     uscf = ngx_http_upstream_add(cf, &u, NGX_HTTP_UPSTREAM_CREATE
                                          |NGX_HTTP_UPSTREAM_WEIGHT
@@ -4384,14 +4415,14 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
             return NULL;
         }
 
-        if ((uscfp[i]->flags & NGX_HTTP_UPSTREAM_CREATE) && u->port) {
+        if ((uscfp[i]->flags & NGX_HTTP_UPSTREAM_CREATE) && !u->no_port) {
             ngx_conf_log_error(NGX_LOG_WARN, cf, 0,
                                "upstream \"%V\" may not have port %d",
                                &u->host, u->port);
             return NULL;
         }
 
-        if ((flags & NGX_HTTP_UPSTREAM_CREATE) && uscfp[i]->port) {
+        if ((flags & NGX_HTTP_UPSTREAM_CREATE) && !uscfp[i]->no_port) {
             ngx_log_error(NGX_LOG_WARN, cf->log, 0,
                           "upstream \"%V\" may not have port %d in %s:%ui",
                           &u->host, uscfp[i]->port,
@@ -4399,7 +4430,9 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
             return NULL;
         }
 
-        if (uscfp[i]->port != u->port) {
+        if (uscfp[i]->port && u->port
+            && uscfp[i]->port != u->port)
+        {
             continue;
         }
 
@@ -4427,6 +4460,7 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     uscf->line = cf->conf_file->line;
     uscf->port = u->port;
     uscf->default_port = u->default_port;
+    uscf->no_port = u->no_port;
 
     if (u->naddrs == 1) {
         uscf->servers = ngx_array_create(cf->pool, 1,

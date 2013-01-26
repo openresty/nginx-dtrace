@@ -31,6 +31,8 @@ ngx_write_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size,
         msg.msg_controllen = 0;
 
     } else {
+        ngx_memzero(&cmsg, sizeof(cmsg));
+
         msg.msg_control = (caddr_t) &cmsg;
         msg.msg_controllen = sizeof(cmsg);
 
