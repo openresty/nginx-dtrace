@@ -137,13 +137,6 @@
 #define NGX_HTTP_COPY_BUFFERED             0x04
 
 
-#if (NGX_HTTP_PROXY || NGX_HTTP_REALIP || NGX_HTTP_GEO)
-#ifndef NGX_HTTP_X_FORWARDED_FOR
-#define NGX_HTTP_X_FORWARDED_FOR           1
-#endif
-#endif
-
-
 typedef enum {
     NGX_HTTP_INITING_REQUEST_STATE = 0,
     NGX_HTTP_READING_REQUEST_STATE,
@@ -179,6 +172,8 @@ typedef struct {
     ngx_table_elt_t                  *connection;
     ngx_table_elt_t                  *if_modified_since;
     ngx_table_elt_t                  *if_unmodified_since;
+    ngx_table_elt_t                  *if_match;
+    ngx_table_elt_t                  *if_none_match;
     ngx_table_elt_t                  *user_agent;
     ngx_table_elt_t                  *referer;
     ngx_table_elt_t                  *content_length;
@@ -229,6 +224,7 @@ typedef struct {
     time_t                            keep_alive_n;
 
     unsigned                          connection_type:2;
+    unsigned                          chunked:1;
     unsigned                          msie:1;
     unsigned                          msie6:1;
     unsigned                          opera:1;
@@ -281,7 +277,9 @@ typedef struct {
     ngx_chain_t                      *bufs;
     ngx_buf_t                        *buf;
     off_t                             rest;
-    ngx_chain_t                      *to_write;
+    ngx_chain_t                      *free;
+    ngx_chain_t                      *busy;
+    ngx_http_chunked_t               *chunked;
     ngx_http_client_body_handler_pt   post_handler;
 } ngx_http_request_body_t;
 
