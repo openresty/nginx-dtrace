@@ -138,6 +138,12 @@ function ngx_buf_last_buf(b)
 }
 
 
+function ngx_buf_last_in_chain(b)
+{
+    return @cast(b, "ngx_buf_t", "/home/agentzh/git/lua-nginx-module/work/nginx/sbin/nginx")->last_in_chain
+}
+
+
 function ngx_buf_sync(b)
 {
     return @cast(b, "ngx_buf_t", "/home/agentzh/git/lua-nginx-module/work/nginx/sbin/nginx")->sync
@@ -191,7 +197,11 @@ function ngx_chain_dump:string (input)
         }
 
         if (ngx_buf_last_buf(buf)) {
-            out .= "<eof>"
+            out .= "<last_buf>"
+        }
+
+        if (ngx_buf_last_in_chain(buf)) {
+            out .= "<last_in_chain>"
         }
 
         if (ngx_buf_sync(buf)) {
