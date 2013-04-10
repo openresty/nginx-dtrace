@@ -1,7 +1,5 @@
 This is an Nginx fork that adds dtrace USDT probes.
 
-This is still under development and not usable yet.
-
 Installation:
 
     ./configure --with-dtrace-probes \
