@@ -132,6 +132,12 @@ function ngx_buf_end(b)
 }
 
 
+function ngx_buf_in_file(b)
+{
+    return @cast(b, "ngx_buf_t", "NGX_SBIN_PATH")->in_file
+}
+
+
 function ngx_buf_last_buf(b)
 {
     return @cast(b, "ngx_buf_t", "/home/agentzh/git/lua-nginx-module/work/nginx/sbin/nginx")->last_buf
@@ -188,6 +194,11 @@ function ngx_chain_dump:string (input)
 
         } else {
             out .= "\"\""
+        }
+
+        if (ngx_buf_in_file(buf)) {
+            out .= sprintf("<in_file:%d-%d>", ngx_buf_file_pos(buf),
+                           ngx_buf_file_last(buf))
         }
 
         if (ngx_buf_last_buf(buf)) {
