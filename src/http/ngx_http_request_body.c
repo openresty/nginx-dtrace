@@ -43,15 +43,11 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
     r->main->count++;
 
     if (r->request_body || r->discard_body) {
-        ngx_http_probe_read_body_abort(r,
-                                       r->request_body ? "body exists"
-                                                       : "body discarded");
         post_handler(r);
         return NGX_OK;
     }
 
     if (ngx_http_test_expect(r) != NGX_OK) {
-        ngx_http_probe_read_body_abort(r, "test expect failed");
         rc = NGX_HTTP_INTERNAL_SERVER_ERROR;
         goto done;
     }
@@ -192,7 +188,6 @@ ngx_http_read_client_request_body_handler(ngx_http_request_t *r)
     ngx_int_t  rc;
 
     if (r->connection->read->timedout) {
-        ngx_http_probe_read_body_abort(r, "timed out");
         r->connection->timedout = 1;
         ngx_http_finalize_request(r, NGX_HTTP_REQUEST_TIME_OUT);
         return;
@@ -279,9 +274,6 @@ ngx_http_do_read_client_request_body(ngx_http_request_t *r)
             }
 
             if (n == 0) {
-
-                ngx_http_probe_read_body_abort(r, "connection closed");
-
                 ngx_log_error(NGX_LOG_INFO, c->log, 0,
                               "client prematurely closed connection");
             }
