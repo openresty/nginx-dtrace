@@ -114,11 +114,6 @@ ngx_http_compile_complex_value(ngx_http_compile_complex_value_t *ccv)
 
     v = ccv->value;
 
-    if (v->len == 0) {
-        ngx_conf_log_error(NGX_LOG_EMERG, ccv->cf, 0, "empty parameter");
-        return NGX_ERROR;
-    }
-
     nv = 0;
     nc = 0;
 
@@ -133,8 +128,9 @@ ngx_http_compile_complex_value(ngx_http_compile_complex_value_t *ccv)
         }
     }
 
-    if (v->data[0] != '$' && (ccv->conf_prefix || ccv->root_prefix)) {
-
+    if ((v->len == 0 || v->data[0] != '$')
+        && (ccv->conf_prefix || ccv->root_prefix))
+    {
         if (ngx_conf_full_name(ccv->cf->cycle, v, ccv->conf_prefix) != NGX_OK) {
             return NGX_ERROR;
         }
@@ -1331,16 +1327,17 @@ ngx_http_script_full_name_code(ngx_http_script_engine_t *e)
 {
     ngx_http_script_full_name_code_t  *code;
 
-    ngx_str_t  value;
+    ngx_str_t  value, *prefix;
 
     code = (ngx_http_script_full_name_code_t *) e->ip;
 
     value.data = e->buf.data;
     value.len = e->pos - e->buf.data;
 
-    if (ngx_conf_full_name((ngx_cycle_t *) ngx_cycle, &value, code->conf_prefix)
-        != NGX_OK)
-    {
+    prefix = code->conf_prefix ? (ngx_str_t *) &ngx_cycle->conf_prefix:
+                                 (ngx_str_t *) &ngx_cycle->prefix;
+
+    if (ngx_get_full_name(e->request->pool, prefix, &value) != NGX_OK) {
         e->ip = ngx_http_script_exit;
         e->status = NGX_HTTP_INTERNAL_SERVER_ERROR;
         return;
@@ -1397,7 +1394,7 @@ ngx_http_script_if_code(ngx_http_script_engine_t *e)
 
     e->sp--;
 
-    if (e->sp->len && (e->sp->len !=1 || e->sp->data[0] != '0')) {
+    if (e->sp->len && (e->sp->len != 1 || e->sp->data[0] != '0')) {
         if (code->loc_conf) {
             e->request->loc_conf = code->loc_conf;
             ngx_http_update_location_config(e->request);

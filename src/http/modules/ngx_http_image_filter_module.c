@@ -45,6 +45,7 @@ typedef struct {
     ngx_uint_t                   sharpen;
 
     ngx_flag_t                   transparency;
+    ngx_flag_t                   interlace;
 
     ngx_http_complex_value_t    *wcv;
     ngx_http_complex_value_t    *hcv;
@@ -141,6 +142,13 @@ static ngx_command_t  ngx_http_image_filter_commands[] = {
       ngx_conf_set_flag_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_image_filter_conf_t, transparency),
+      NULL },
+
+   { ngx_string("image_filter_interlace"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_image_filter_conf_t, interlace),
       NULL },
 
     { ngx_string("image_filter_buffer"),
@@ -470,7 +478,12 @@ ngx_http_image_read(ngx_http_request_t *r, ngx_chain_t *in)
                        "image buf: %uz", size);
 
         rest = ctx->image + ctx->length - p;
-        size = (rest < size) ? rest : size;
+
+        if (size > rest) {
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                          "image filter: too big response");
+            return NGX_ERROR;
+        }
 
         p = ngx_cpymem(p, b->pos, size);
         b->pos += size;
@@ -559,7 +572,8 @@ ngx_http_image_json(ngx_http_request_t *r, ngx_http_image_filter_ctx_t *ctx)
     ngx_http_clean_header(r);
 
     r->headers_out.status = NGX_HTTP_OK;
-    ngx_str_set(&r->headers_out.content_type, "text/plain");
+    r->headers_out.content_type_len = sizeof("application/json") - 1;
+    ngx_str_set(&r->headers_out.content_type, "application/json");
     r->headers_out.content_type_lowcase = NULL;
 
     if (ctx == NULL) {
@@ -963,6 +977,8 @@ transparent:
         gdImageSharpen(dst, sharpen);
     }
 
+    gdImageInterlace(dst, (int) conf->interlace);
+
     out = ngx_http_image_out(r, ctx->type, dst, &size);
 
     ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -1169,11 +1185,24 @@ ngx_http_image_filter_create_conf(ngx_conf_t *cf)
         return NULL;
     }
 
+    /*
+     * set by ngx_pcalloc():
+     *
+     *     conf->width = 0;
+     *     conf->height = 0;
+     *     conf->angle = 0;
+     *     conf->wcv = NULL;
+     *     conf->hcv = NULL;
+     *     conf->acv = NULL;
+     *     conf->jqcv = NULL;
+     *     conf->shcv = NULL;
+     */
+
     conf->filter = NGX_CONF_UNSET_UINT;
     conf->jpeg_quality = NGX_CONF_UNSET_UINT;
     conf->sharpen = NGX_CONF_UNSET_UINT;
-    conf->angle = NGX_CONF_UNSET_UINT;
     conf->transparency = NGX_CONF_UNSET;
+    conf->interlace = NGX_CONF_UNSET;
     conf->buffer_size = NGX_CONF_UNSET_SIZE;
 
     return conf;
@@ -1195,30 +1224,34 @@ ngx_http_image_filter_merge_conf(ngx_conf_t *cf, void *parent, void *child)
             conf->filter = prev->filter;
             conf->width = prev->width;
             conf->height = prev->height;
+            conf->angle = prev->angle;
             conf->wcv = prev->wcv;
             conf->hcv = prev->hcv;
+            conf->acv = prev->acv;
         }
     }
 
-    /* 75 is libjpeg default quality */
-    ngx_conf_merge_uint_value(conf->jpeg_quality, prev->jpeg_quality, 75);
+    if (conf->jpeg_quality == NGX_CONF_UNSET_UINT) {
 
-    if (conf->jqcv == NULL) {
-        conf->jqcv = prev->jqcv;
+        /* 75 is libjpeg default quality */
+        ngx_conf_merge_uint_value(conf->jpeg_quality, prev->jpeg_quality, 75);
+
+        if (conf->jqcv == NULL) {
+            conf->jqcv = prev->jqcv;
+        }
     }
 
-    ngx_conf_merge_uint_value(conf->sharpen, prev->sharpen, 0);
+    if (conf->sharpen == NGX_CONF_UNSET_UINT) {
+        ngx_conf_merge_uint_value(conf->sharpen, prev->sharpen, 0);
 
-    if (conf->shcv == NULL) {
-        conf->shcv = prev->shcv;
-    }
-
-    ngx_conf_merge_uint_value(conf->angle, prev->angle, 0);
-    if (conf->acv == NULL) {
-        conf->acv = prev->acv;
+        if (conf->shcv == NULL) {
+            conf->shcv = prev->shcv;
+        }
     }
 
     ngx_conf_merge_value(conf->transparency, prev->transparency, 1);
+
+    ngx_conf_merge_value(conf->interlace, prev->interlace, 0);
 
     ngx_conf_merge_size_value(conf->buffer_size, prev->buffer_size,
                               1 * 1024 * 1024);

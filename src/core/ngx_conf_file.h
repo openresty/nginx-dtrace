@@ -5,8 +5,8 @@
  */
 
 
-#ifndef _NGX_HTTP_CONF_FILE_H_INCLUDED_
-#define _NGX_HTTP_CONF_FILE_H_INCLUDED_
+#ifndef _NGX_CONF_FILE_H_INCLUDED_
+#define _NGX_CONF_FILE_H_INCLUDED_
 
 
 #include <ngx_config.h>
@@ -91,17 +91,8 @@ struct ngx_open_file_s {
     ngx_fd_t              fd;
     ngx_str_t             name;
 
-    u_char               *buffer;
-    u_char               *pos;
-    u_char               *last;
-
-#if 0
-    /* e.g. append mode, error_log */
-    ngx_uint_t            flags;
-    /* e.g. reopen db file */
-    ngx_uint_t          (*handler)(void *data, ngx_open_file_t *file);
+    void                (*flush)(ngx_open_file_t *file, ngx_log_t *log);
     void                 *data;
-#endif
 };
 
 
@@ -346,4 +337,4 @@ extern ngx_uint_t     ngx_max_module;
 extern ngx_module_t  *ngx_modules[];
 
 
-#endif /* _NGX_HTTP_CONF_FILE_H_INCLUDED_ */
+#endif /* _NGX_CONF_FILE_H_INCLUDED_ */

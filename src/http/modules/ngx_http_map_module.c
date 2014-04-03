@@ -131,7 +131,7 @@ ngx_http_map_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     }
 
     if (!value->valid) {
-        value = ngx_http_get_flushed_variable(r, (ngx_uint_t) value->data);
+        value = ngx_http_get_flushed_variable(r, (uintptr_t) value->data);
 
         if (value == NULL || value->not_found) {
             value = &ngx_http_variable_null_value;
@@ -209,6 +209,13 @@ ngx_http_map_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     name = value[2];
+
+    if (name.data[0] != '$') {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "invalid variable name \"%V\"", &name);
+        return NGX_CONF_ERROR;
+    }
+
     name.len--;
     name.data++;
 
@@ -220,7 +227,7 @@ ngx_http_map_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     var->get_handler = ngx_http_map_variable;
     var->data = (uintptr_t) map;
 
-    pool = ngx_create_pool(16384, cf->log);
+    pool = ngx_create_pool(NGX_DEFAULT_POOL_SIZE, cf->log);
     if (pool == NULL) {
         return NGX_CONF_ERROR;
     }
@@ -407,7 +414,7 @@ ngx_http_map(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
         var = ctx->var_values.elts;
 
         for (i = 0; i < ctx->var_values.nelts; i++) {
-            if (index == (ngx_int_t) var[i].data) {
+            if (index == (intptr_t) var[i].data) {
                 var = &var[i];
                 goto found;
             }
@@ -422,7 +429,7 @@ ngx_http_map(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
         var->no_cacheable = 0;
         var->not_found = 0;
         var->len = 0;
-        var->data = (u_char *) index;
+        var->data = (u_char *) (intptr_t) index;
 
         goto found;
     }
