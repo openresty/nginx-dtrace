@@ -367,13 +367,6 @@ ngx_poll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
              */
 
             revents |= POLLIN|POLLOUT;
-            if (c->read->active) {
-                revents |= POLLIN;
-            }
-
-            if (c->write->active) {
-                revents |= POLLOUT;
-            }
         }
 
         found = 0;

@@ -37,8 +37,6 @@ typedef struct {
     ngx_event_save_peer_session_pt     original_save_session;
 #endif
 
-    ngx_uint_t                         failed;       /* unsigned:1 */
-
 } ngx_http_upstream_keepalive_peer_data_t;
 
 
@@ -83,7 +81,7 @@ static ngx_command_t  ngx_http_upstream_keepalive_commands[] = {
     { ngx_string("keepalive"),
       NGX_HTTP_UPS_CONF|NGX_CONF_TAKE12,
       ngx_http_upstream_keepalive,
-      0,
+      NGX_HTTP_SRV_CONF_OFFSET,
       0,
       NULL },
 
@@ -220,8 +218,6 @@ ngx_http_upstream_get_keepalive_peer(ngx_peer_connection_t *pc, void *data)
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, pc->log, 0,
                    "get keepalive peer");
 
-    kp->failed = 0;
-
     /* ask balancer */
 
     rc = kp->original_get_peer(pc, kp->data);
@@ -282,18 +278,12 @@ ngx_http_upstream_free_keepalive_peer(ngx_peer_connection_t *pc, void *data,
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, pc->log, 0,
                    "free keepalive peer");
 
-    /* remember failed state - peer.free() may be called more than once */
-
-    if (state & NGX_PEER_FAILED) {
-        kp->failed = 1;
-    }
-
     /* cache valid connections */
 
     u = kp->upstream;
     c = pc->connection;
 
-    if (kp->failed
+    if (state & NGX_PEER_FAILED
         || c == NULL
         || c->read->eof
         || c->read->error
@@ -491,16 +481,13 @@ static char *
 ngx_http_upstream_keepalive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_upstream_srv_conf_t            *uscf;
-    ngx_http_upstream_keepalive_srv_conf_t  *kcf;
+    ngx_http_upstream_keepalive_srv_conf_t  *kcf = conf;
 
     ngx_int_t    n;
     ngx_str_t   *value;
     ngx_uint_t   i;
 
     uscf = ngx_http_conf_get_module_srv_conf(cf, ngx_http_upstream_module);
-
-    kcf = ngx_http_conf_upstream_srv_conf(uscf,
-                                          ngx_http_upstream_keepalive_module);
 
     if (kcf->original_init_upstream) {
         return "is duplicate";

@@ -9,9 +9,9 @@
 #define _NGINX_H_INCLUDED_
 
 
-#define nginx_version      1003011
-#define NGINX_VERSION      "1.3.11"
-#define NGINX_VER          "ngx_openresty/" NGINX_VERSION ".1"
+#define nginx_version      1005012
+#define NGINX_VERSION      "1.5.12"
+#define NGINX_VER          "openresty/" NGINX_VERSION ".1rc1"
 
 #define NGINX_VAR          "NGINX"
 #define NGX_OLDPID_EXT     ".oldbin"
