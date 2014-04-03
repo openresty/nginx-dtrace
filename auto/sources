@@ -37,7 +37,8 @@ CORE_DEPS="src/core/nginx.h \
            src/core/ngx_resolver.h \
            src/core/ngx_open_file_cache.h \
            src/core/ngx_crypt.h \
-           src/core/ngx_core_probe.h"
+           src/core/ngx_core_probe.h \
+           src/core/ngx_proxy_protocol.h"
 
 
 if [ $NGX_DTRACE = YES ]; then
@@ -73,7 +74,8 @@ CORE_SRCS="src/core/nginx.c \
            src/core/ngx_conf_file.c \
            src/core/ngx_resolver.c \
            src/core/ngx_open_file_cache.c \
-           src/core/ngx_crypt.c"
+           src/core/ngx_crypt.c \
+           src/core/ngx_proxy_protocol.c"
 
 
 REGEX_MODULE=ngx_regex_module
@@ -332,6 +334,15 @@ HTTP_POSTPONE_FILTER_SRCS=src/http/ngx_http_postpone_filter_module.c
 HTTP_FILE_CACHE_SRCS=src/http/ngx_http_file_cache.c
 
 
+HTTP_SPDY_MODULE=ngx_http_spdy_module
+HTTP_SPDY_FILTER_MODULE=ngx_http_spdy_filter_module
+HTTP_SPDY_DEPS="src/http/ngx_http_spdy.h \
+                src/http/ngx_http_spdy_module.h"
+HTTP_SPDY_SRCS="src/http/ngx_http_spdy.c \
+                src/http/ngx_http_spdy_module.c \
+                src/http/ngx_http_spdy_filter_module.c"
+
+
 HTTP_CHARSET_FILTER_MODULE=ngx_http_charset_filter_module
 HTTP_CHARSET_SRCS=src/http/modules/ngx_http_charset_filter_module.c
 
@@ -383,6 +394,10 @@ HTTP_ACCESS_SRCS=src/http/modules/ngx_http_access_module.c
 
 HTTP_AUTH_BASIC_MODULE=ngx_http_auth_basic_module
 HTTP_AUTH_BASIC_SRCS=src/http/modules/ngx_http_auth_basic_module.c
+
+
+HTTP_AUTH_REQUEST_MODULE=ngx_http_auth_request_module
+HTTP_AUTH_REQUEST_SRCS=src/http/modules/ngx_http_auth_request_module.c
 
 
 HTTP_AUTOINDEX_MODULE=ngx_http_autoindex_module
