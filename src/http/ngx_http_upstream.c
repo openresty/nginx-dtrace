@@ -156,6 +156,8 @@ static char *ngx_http_upstream_init_main_conf(ngx_conf_t *cf, void *conf);
 static void ngx_http_upstream_ssl_init_connection(ngx_http_request_t *,
     ngx_http_upstream_t *u, ngx_connection_t *c);
 static void ngx_http_upstream_ssl_handshake(ngx_connection_t *c);
+static ngx_int_t ngx_http_upstream_ssl_name(ngx_http_request_t *r,
+    ngx_http_upstream_t *u, ngx_connection_t *c);
 #endif
 
 
@@ -214,7 +216,8 @@ ngx_http_upstream_header_t  ngx_http_upstream_headers_in[] = {
                  ngx_http_upstream_rewrite_refresh, 0, 0 },
 
     { ngx_string("Set-Cookie"),
-                 ngx_http_upstream_process_set_cookie, 0,
+                 ngx_http_upstream_process_set_cookie,
+                 offsetof(ngx_http_upstream_headers_in_t, cookies),
                  ngx_http_upstream_rewrite_set_cookie, 0, 1 },
 
     { ngx_string("Content-Disposition"),
@@ -584,6 +587,10 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
 
     } else {
 
+#if (NGX_HTTP_SSL)
+        u->ssl_name = u->resolved->host;
+#endif
+
         if (u->resolved->sockaddr) {
 
             if (ngx_http_upstream_create_round_robin_peer(r, u->resolved)
@@ -669,6 +676,10 @@ found:
                                            NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
+
+#if (NGX_HTTP_SSL)
+    u->ssl_name = uscf->host;
+#endif
 
     if (uscf->peer.init(r, uscf) != NGX_OK) {
         ngx_http_upstream_finalize_request(r, u,
@@ -1356,6 +1367,14 @@ ngx_http_upstream_ssl_init_connection(ngx_http_request_t *r,
     c->sendfile = 0;
     u->output.sendfile = 0;
 
+    if (u->conf->ssl_server_name || u->conf->ssl_verify) {
+        if (ngx_http_upstream_ssl_name(r, u, c) != NGX_OK) {
+            ngx_http_upstream_finalize_request(r, u,
+                                               NGX_HTTP_INTERNAL_SERVER_ERROR);
+            return;
+        }
+    }
+
     if (u->conf->ssl_session_reuse) {
         if (u->peer.set_session(&u->peer, u->peer.data) != NGX_OK) {
             ngx_http_upstream_finalize_request(r, u,
@@ -1380,6 +1399,7 @@ ngx_http_upstream_ssl_init_connection(ngx_http_request_t *r,
 static void
 ngx_http_upstream_ssl_handshake(ngx_connection_t *c)
 {
+    long                  rc;
     ngx_http_request_t   *r;
     ngx_http_upstream_t  *u;
 
@@ -1387,6 +1407,24 @@ ngx_http_upstream_ssl_handshake(ngx_connection_t *c)
     u = r->upstream;
 
     if (c->ssl->handshaked) {
+
+        if (u->conf->ssl_verify) {
+            rc = SSL_get_verify_result(c->ssl->connection);
+
+            if (rc != X509_V_OK) {
+                ngx_log_error(NGX_LOG_ERR, c->log, 0,
+                              "upstream SSL certificate verify error: (%l:%s)",
+                              rc, X509_verify_cert_error_string(rc));
+                goto failed;
+            }
+
+            if (ngx_ssl_check_host(c, &u->ssl_name) != NGX_OK) {
+                ngx_log_error(NGX_LOG_ERR, c->log, 0,
+                              "upstream SSL certificate does not match \"%V\"",
+                              &u->ssl_name);
+                goto failed;
+            }
+        }
 
         if (u->conf->ssl_session_reuse) {
             u->peer.save_session(&u->peer, u->peer.data);
@@ -1403,11 +1441,104 @@ ngx_http_upstream_ssl_handshake(ngx_connection_t *c)
         return;
     }
 
+failed:
+
     c = r->connection;
 
     ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);
 
     ngx_http_run_posted_requests(c);
+}
+
+
+static ngx_int_t
+ngx_http_upstream_ssl_name(ngx_http_request_t *r, ngx_http_upstream_t *u,
+    ngx_connection_t *c)
+{
+    u_char     *p, *last;
+    ngx_str_t   name;
+
+    if (u->conf->ssl_name) {
+        if (ngx_http_complex_value(r, u->conf->ssl_name, &name) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+    } else {
+        name = u->ssl_name;
+    }
+
+    if (name.len == 0) {
+        goto done;
+    }
+
+    /*
+     * ssl name here may contain port, notably if derived from $proxy_host
+     * or $http_host; we have to strip it
+     */
+
+    p = name.data;
+    last = name.data + name.len;
+
+    if (*p == '[') {
+        p = ngx_strlchr(p, last, ']');
+
+        if (p == NULL) {
+            p = name.data;
+        }
+    }
+
+    p = ngx_strlchr(p, last, ':');
+
+    if (p != NULL) {
+        name.len = p - name.data;
+    }
+
+    if (!u->conf->ssl_server_name) {
+        goto done;
+    }
+
+#ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
+
+    /* as per RFC 6066, literal IPv4 and IPv6 addresses are not permitted */
+
+    if (name.len == 0 || *name.data == '[') {
+        goto done;
+    }
+
+    if (ngx_inet_addr(name.data, name.len) != INADDR_NONE) {
+        goto done;
+    }
+
+    /*
+     * SSL_set_tlsext_host_name() needs a null-terminated string,
+     * hence we explicitly null-terminate name here
+     */
+
+    p = ngx_pnalloc(r->pool, name.len + 1);
+    if (p == NULL) {
+        return NGX_ERROR;
+    }
+
+    (void) ngx_cpystrn(p, name.data, name.len + 1);
+
+    name.data = p;
+
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "upstream SSL server name: \"%s\"", name.data);
+
+    if (SSL_set_tlsext_host_name(c->ssl->connection, name.data) == 0) {
+        ngx_ssl_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "SSL_set_tlsext_host_name(\"%s\") failed", name.data);
+        return NGX_ERROR;
+    }
+
+#endif
+
+done:
+
+    u->ssl_name = name;
+
+    return NGX_OK;
 }
 
 #endif
@@ -3605,11 +3736,28 @@ static ngx_int_t
 ngx_http_upstream_process_set_cookie(ngx_http_request_t *r, ngx_table_elt_t *h,
     ngx_uint_t offset)
 {
-#if (NGX_HTTP_CACHE)
-    ngx_http_upstream_t  *u;
+    ngx_array_t           *pa;
+    ngx_table_elt_t      **ph;
+    ngx_http_upstream_t   *u;
 
     u = r->upstream;
+    pa = &u->headers_in.cookies;
 
+    if (pa->elts == NULL) {
+        if (ngx_array_init(pa, r->pool, 1, sizeof(ngx_table_elt_t *)) != NGX_OK)
+        {
+            return NGX_ERROR;
+        }
+    }
+
+    ph = ngx_array_push(pa);
+    if (ph == NULL) {
+        return NGX_ERROR;
+    }
+
+    *ph = h;
+
+#if (NGX_HTTP_CACHE)
     if (!(u->conf->ignore_headers & NGX_HTTP_UPSTREAM_IGN_SET_COOKIE)) {
         u->cacheable = 0;
     }
@@ -4186,7 +4334,12 @@ ngx_http_upstream_copy_allow_ranges(ngx_http_request_t *r,
     if (r->cached) {
         r->allow_ranges = 1;
         return NGX_OK;
+    }
 
+    if (r->upstream->cacheable) {
+        r->allow_ranges = 1;
+        r->single_range = 1;
+        return NGX_OK;
     }
 
 #endif
@@ -4526,6 +4679,40 @@ ngx_http_upstream_header_variable(ngx_http_request_t *r,
 }
 
 
+ngx_int_t
+ngx_http_upstream_cookie_variable(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data)
+{
+    ngx_str_t  *name = (ngx_str_t *) data;
+
+    ngx_str_t   cookie, s;
+
+    if (r->upstream == NULL) {
+        v->not_found = 1;
+        return NGX_OK;
+    }
+
+    s.len = name->len - (sizeof("upstream_cookie_") - 1);
+    s.data = name->data + sizeof("upstream_cookie_") - 1;
+
+    if (ngx_http_parse_set_cookie_lines(&r->upstream->headers_in.cookies,
+                                        &s, &cookie)
+        == NGX_DECLINED)
+    {
+        v->not_found = 1;
+        return NGX_OK;
+    }
+
+    v->len = cookie.len;
+    v->valid = 1;
+    v->no_cacheable = 0;
+    v->not_found = 0;
+    v->data = cookie.data;
+
+    return NGX_OK;
+}
+
+
 #if (NGX_HTTP_CACHE)
 
 ngx_int_t
@@ -4814,6 +5001,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         goto invalid;
     }
 
+    us->name = u.url;
     us->addrs = u.addrs;
     us->naddrs = u.naddrs;
     us->weight = weight;

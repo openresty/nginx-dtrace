@@ -22,6 +22,7 @@ static void ngx_mail_ssl_handshake_handler(ngx_connection_t *c);
 void
 ngx_mail_init_connection(ngx_connection_t *c)
 {
+    size_t                 len;
     ngx_uint_t             i;
     ngx_mail_port_t       *port;
     struct sockaddr       *sa;
@@ -30,6 +31,7 @@ ngx_mail_init_connection(ngx_connection_t *c)
     ngx_mail_in_addr_t    *addr;
     ngx_mail_session_t    *s;
     ngx_mail_addr_conf_t  *addr_conf;
+    u_char                 text[NGX_SOCKADDR_STRLEN];
 #if (NGX_HAVE_INET6)
     struct sockaddr_in6   *sin6;
     ngx_mail_in6_addr_t   *addr6;
@@ -127,8 +129,10 @@ ngx_mail_init_connection(ngx_connection_t *c)
     c->data = s;
     s->connection = c;
 
-    ngx_log_error(NGX_LOG_INFO, c->log, 0, "*%uA client %V connected to %V",
-                  c->number, &c->addr_text, s->addr_text);
+    len = ngx_sock_ntop(c->sockaddr, c->socklen, text, NGX_SOCKADDR_STRLEN, 1);
+
+    ngx_log_error(NGX_LOG_INFO, c->log, 0, "*%uA client %*s connected to %V",
+                  c->number, len, text, s->addr_text);
 
     ctx = ngx_palloc(c->pool, sizeof(ngx_mail_log_ctx_t));
     if (ctx == NULL) {
@@ -559,7 +563,12 @@ ngx_mail_send(ngx_event_t *wev)
     n = c->send(c, s->out.data, s->out.len);
 
     if (n > 0) {
+        s->out.data += n;
         s->out.len -= n;
+
+        if (s->out.len != 0) {
+            goto again;
+        }
 
         if (wev->timer_set) {
             ngx_del_timer(wev);
@@ -583,6 +592,8 @@ ngx_mail_send(ngx_event_t *wev)
     }
 
     /* n == NGX_AGAIN */
+
+again:
 
     cscf = ngx_mail_get_module_srv_conf(s, ngx_mail_core_module);
 
