@@ -121,6 +121,10 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     }
 
     title = ngx_pnalloc(cycle->pool, size);
+    if (title == NULL) {
+        /* fatal */
+        exit(2);
+    }
 
     p = ngx_cpymem(title, master_process, sizeof(master_process) - 1);
     for (i = 0; i < ngx_argc; i++) {
@@ -805,6 +809,8 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
                 }
             }
 
+            ngx_event_cancel_timers();
+
             if (ngx_event_timer_rbtree.root == ngx_event_timer_rbtree.sentinel)
             {
                 ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "exiting");
@@ -1209,8 +1215,6 @@ ngx_wakeup_worker_threads(ngx_cycle_t *cycle)
 
             /* STUB */
             ngx_done_events(cycle);
-            ngx_mutex_destroy(ngx_event_timer_mutex);
-            ngx_mutex_destroy(ngx_posted_events_mutex);
 
             return;
         }
@@ -1261,19 +1265,17 @@ ngx_worker_thread_cycle(void *data)
         return (ngx_thread_value_t) 1;
     }
 
-    ngx_mutex_lock(ngx_posted_events_mutex);
-
     for ( ;; ) {
         thr->state = NGX_THREAD_FREE;
 
+#if 0
         if (ngx_cond_wait(thr->cv, ngx_posted_events_mutex) == NGX_ERROR) {
             return (ngx_thread_value_t) 1;
         }
+#endif
 
         if (ngx_terminate) {
             thr->state = NGX_THREAD_EXIT;
-
-            ngx_mutex_unlock(ngx_posted_events_mutex);
 
             ngx_log_debug1(NGX_LOG_DEBUG_CORE, cycle->log, 0,
                            "thread " NGX_TID_T_FMT " is done",
@@ -1284,6 +1286,7 @@ ngx_worker_thread_cycle(void *data)
 
         thr->state = NGX_THREAD_BUSY;
 
+#if 0
         if (ngx_event_thread_process_posted(cycle) == NGX_ERROR) {
             return (ngx_thread_value_t) 1;
         }
@@ -1291,6 +1294,7 @@ ngx_worker_thread_cycle(void *data)
         if (ngx_event_thread_process_posted(cycle) == NGX_ERROR) {
             return (ngx_thread_value_t) 1;
         }
+#endif
 
         if (ngx_process_changes) {
             if (ngx_process_changes(cycle, 1) == NGX_ERROR) {

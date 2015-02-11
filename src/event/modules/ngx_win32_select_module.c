@@ -221,7 +221,8 @@ ngx_select_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
     int                ready, nready;
     ngx_err_t          err;
     ngx_uint_t         i, found;
-    ngx_event_t       *ev, **queue;
+    ngx_event_t       *ev;
+    ngx_queue_t       *queue;
     struct timeval     tv, *tp;
     ngx_connection_t  *c;
 
@@ -296,8 +297,6 @@ ngx_select_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
         return NGX_ERROR;
     }
 
-    ngx_mutex_lock(ngx_posted_events_mutex);
-
     nready = 0;
 
     for (i = 0; i < nevents; i++) {
@@ -323,15 +322,14 @@ ngx_select_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
         if (found) {
             ev->ready = 1;
 
-            queue = (ngx_event_t **) (ev->accept ? &ngx_posted_accept_events:
-                                                   &ngx_posted_events);
-            ngx_locked_post_event(ev, queue);
+            queue = ev->accept ? &ngx_posted_accept_events
+                               : &ngx_posted_events;
+
+            ngx_post_event(ev, queue);
 
             nready++;
         }
     }
-
-    ngx_mutex_unlock(ngx_posted_events_mutex);
 
     if (ready != nready) {
         ngx_log_error(NGX_LOG_ALERT, cycle->log, 0,

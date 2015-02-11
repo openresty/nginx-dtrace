@@ -1363,7 +1363,7 @@ ngx_http_core_try_files_phase(ngx_http_request_t *r,
             continue;
         }
 
-        if (of.is_dir && !test_dir) {
+        if (of.is_dir != test_dir) {
             continue;
         }
 
@@ -1847,6 +1847,7 @@ ngx_http_set_etag(ngx_http_request_t *r)
 
     etag->value.data = ngx_pnalloc(r->pool, NGX_OFF_T_LEN + NGX_TIME_T_LEN + 3);
     if (etag->value.data == NULL) {
+        etag->hash = 0;
         return NGX_ERROR;
     }
 
@@ -1858,6 +1859,46 @@ ngx_http_set_etag(ngx_http_request_t *r)
     r->headers_out.etag = etag;
 
     return NGX_OK;
+}
+
+
+void
+ngx_http_weak_etag(ngx_http_request_t *r)
+{
+    size_t            len;
+    u_char           *p;
+    ngx_table_elt_t  *etag;
+
+    etag = r->headers_out.etag;
+
+    if (etag == NULL) {
+        return;
+    }
+
+    if (etag->value.len > 2
+        && etag->value.data[0] == 'W'
+        && etag->value.data[1] == '/')
+    {
+        return;
+    }
+
+    if (etag->value.len < 1 || etag->value.data[0] != '"') {
+        r->headers_out.etag->hash = 0;
+        r->headers_out.etag = NULL;
+        return;
+    }
+
+    p = ngx_pnalloc(r->pool, etag->value.len + 2);
+    if (p == NULL) {
+        r->headers_out.etag->hash = 0;
+        r->headers_out.etag = NULL;
+        return;
+    }
+
+    len = ngx_sprintf(p, "W/%V", &etag->value) - p;
+
+    etag->value.data = p;
+    etag->value.len = len;
 }
 
 
@@ -1942,6 +1983,10 @@ ngx_http_send_response(ngx_http_request_t *r, ngx_uint_t status,
 ngx_int_t
 ngx_http_send_header(ngx_http_request_t *r)
 {
+    if (r->post_action) {
+        return NGX_OK;
+    }
+
     if (r->header_sent) {
         ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0,
                       "header already sent");
@@ -2325,7 +2370,7 @@ ngx_http_gzip_accept_encoding(ngx_str_t *ae)
     p += 4;
 
     while (p < last) {
-        switch(*p++) {
+        switch (*p++) {
         case ',':
             return NGX_OK;
         case ';':
@@ -2342,7 +2387,7 @@ ngx_http_gzip_accept_encoding(ngx_str_t *ae)
 quantity:
 
     while (p < last) {
-        switch(*p++) {
+        switch (*p++) {
         case 'q':
         case 'Q':
             goto equal;

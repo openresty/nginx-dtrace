@@ -1065,15 +1065,15 @@ ngx_http_spdy_state_headers(ngx_http_spdy_connection_t *sc, u_char *pos,
                                     : Z_OK;
     }
 
-    if (z != Z_OK) {
-        return ngx_http_spdy_state_inflate_error(sc, z);
-    }
-
     ngx_log_debug5(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "spdy inflate out: ni:%p no:%p ai:%ud ao:%ud rc:%d",
                    sc->zstream_in.next_in, sc->zstream_in.next_out,
                    sc->zstream_in.avail_in, sc->zstream_in.avail_out,
                    z);
+
+    if (z != Z_OK) {
+        return ngx_http_spdy_state_inflate_error(sc, z);
+    }
 
     sc->length -= sc->zstream_in.next_in - pos;
     pos = sc->zstream_in.next_in;
@@ -1163,6 +1163,12 @@ ngx_http_spdy_state_headers(ngx_http_spdy_connection_t *sc, u_char *pos,
                 sc->zstream_in.avail_out = buf->end - buf->last - 1;
 
                 z = inflate(&sc->zstream_in, Z_NO_FLUSH);
+
+                ngx_log_debug5(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                           "spdy inflate out: ni:%p no:%p ai:%ud ao:%ud rc:%d",
+                           sc->zstream_in.next_in, sc->zstream_in.next_out,
+                           sc->zstream_in.avail_in, sc->zstream_in.avail_out,
+                           z);
 
                 if (z != Z_OK) {
                     return ngx_http_spdy_state_inflate_error(sc, z);
@@ -1264,6 +1270,12 @@ ngx_http_spdy_state_headers_skip(ngx_http_spdy_connection_t *sc, u_char *pos,
         sc->zstream_in.avail_out = NGX_SPDY_SKIP_HEADERS_BUFFER_SIZE;
 
         n = inflate(&sc->zstream_in, Z_NO_FLUSH);
+
+        ngx_log_debug5(NGX_LOG_DEBUG_HTTP, sc->connection->log, 0,
+                       "spdy inflate out: ni:%p no:%p ai:%ud ao:%ud rc:%d",
+                       sc->zstream_in.next_in, sc->zstream_in.next_out,
+                       sc->zstream_in.avail_in, sc->zstream_in.avail_out,
+                       n);
 
         if (n != Z_OK) {
             return ngx_http_spdy_state_inflate_error(sc, n);
@@ -2584,6 +2596,8 @@ ngx_http_spdy_parse_header(ngx_http_request_t *r)
                 r->header_end = p;
                 r->header_in->pos = p + 1;
 
+                r->state = sw_value;
+
                 return NGX_OK;
             }
 
@@ -2646,19 +2660,18 @@ ngx_http_spdy_alloc_large_header_buffer(ngx_http_request_t *r)
     rest = r->header_in->last - r->header_in->pos;
 
     /*
-     * equality is prohibited since one more byte is needed
-     * for null-termination
+     * One more byte is needed for null-termination
+     * and another one for further progress.
      */
-    if (rest >= cscf->large_client_header_buffers.size) {
+    if (rest > cscf->large_client_header_buffers.size - 2) {
         p = r->header_in->pos;
 
         if (rest > NGX_MAX_ERROR_STR - 300) {
             rest = NGX_MAX_ERROR_STR - 300;
-            p[rest++] = '.'; p[rest++] = '.'; p[rest++] = '.';
         }
 
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "client sent too long header name or value: \"%*s\"",
+                      "client sent too long header name or value: \"%*s...\"",
                       rest, p);
 
         return NGX_DECLINED;
@@ -3304,8 +3317,10 @@ ngx_http_spdy_close_stream_handler(ngx_event_t *ev)
 void
 ngx_http_spdy_close_stream(ngx_http_spdy_stream_t *stream, ngx_int_t rc)
 {
+    int                           tcp_nodelay;
     ngx_event_t                  *ev;
-    ngx_connection_t             *fc;
+    ngx_connection_t             *c, *fc;
+    ngx_http_core_loc_conf_t     *clcf;
     ngx_http_spdy_stream_t      **index, *s;
     ngx_http_spdy_srv_conf_t     *sscf;
     ngx_http_spdy_connection_t   *sc;
@@ -3330,6 +3345,54 @@ ngx_http_spdy_close_stream(ngx_http_spdy_stream_t *stream, ngx_int_t rc)
             != NGX_OK)
         {
             sc->connection->error = 1;
+        }
+
+    } else {
+        c = sc->connection;
+
+        if (c->tcp_nopush == NGX_TCP_NOPUSH_SET) {
+            if (ngx_tcp_push(c->fd) == -1) {
+                ngx_connection_error(c, ngx_socket_errno,
+                                     ngx_tcp_push_n " failed");
+                c->error = 1;
+                tcp_nodelay = 0;
+
+            } else {
+                c->tcp_nopush = NGX_TCP_NOPUSH_UNSET;
+                tcp_nodelay = ngx_tcp_nodelay_and_tcp_nopush ? 1 : 0;
+            }
+
+        } else {
+            tcp_nodelay = 1;
+        }
+
+        clcf = ngx_http_get_module_loc_conf(stream->request,
+                                            ngx_http_core_module);
+
+        if (tcp_nodelay
+            && clcf->tcp_nodelay
+            && c->tcp_nodelay == NGX_TCP_NODELAY_UNSET)
+        {
+            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0, "tcp_nodelay");
+
+            if (setsockopt(c->fd, IPPROTO_TCP, TCP_NODELAY,
+                           (const void *) &tcp_nodelay, sizeof(int))
+                == -1)
+            {
+#if (NGX_SOLARIS)
+                /* Solaris returns EINVAL if a socket has been shut down */
+                c->log_error = NGX_ERROR_IGNORE_EINVAL;
+#endif
+
+                ngx_connection_error(c, ngx_socket_errno,
+                                     "setsockopt(TCP_NODELAY) failed");
+
+                c->log_error = NGX_ERROR_INFO;
+                c->error = 1;
+
+            } else {
+                c->tcp_nodelay = NGX_TCP_NODELAY_SET;
+            }
         }
     }
 
@@ -3370,7 +3433,7 @@ ngx_http_spdy_close_stream(ngx_http_spdy_stream_t *stream, ngx_int_t rc)
         ngx_del_timer(ev);
     }
 
-    if (ev->prev) {
+    if (ev->posted) {
         ngx_delete_posted_event(ev);
     }
 
@@ -3385,7 +3448,7 @@ ngx_http_spdy_close_stream(ngx_http_spdy_stream_t *stream, ngx_int_t rc)
         ngx_del_timer(ev);
     }
 
-    if (ev->prev) {
+    if (ev->posted) {
         ngx_delete_posted_event(ev);
     }
 

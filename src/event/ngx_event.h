@@ -74,9 +74,7 @@ struct ngx_event_s {
     /* the pending eof reported by kqueue, epoll or in aio chain operation */
     unsigned         pending_eof:1;
 
-#if !(NGX_THREADS)
-    unsigned         posted_ready:1;
-#endif
+    unsigned         posted:1;
 
 #if (NGX_WIN32)
     /* setsockopt(SO_UPDATE_ACCEPT_CONTEXT) was successful */
@@ -129,39 +127,16 @@ struct ngx_event_s {
 
     ngx_rbtree_node_t   timer;
 
+    /* the posted queue */
+    ngx_queue_t      queue;
+
     unsigned         closed:1;
 
     /* to test on worker exit */
     unsigned         channel:1;
     unsigned         resolver:1;
 
-#if (NGX_THREADS)
-
-    unsigned         locked:1;
-
-    unsigned         posted_ready:1;
-    unsigned         posted_timedout:1;
-    unsigned         posted_eof:1;
-
-#if (NGX_HAVE_KQUEUE)
-    /* the pending errno reported by kqueue */
-    int              posted_errno;
-#endif
-
-#if (NGX_HAVE_KQUEUE) || (NGX_HAVE_IOCP)
-    int              posted_available;
-#else
-    unsigned         posted_available:1;
-#endif
-
-    ngx_atomic_t    *lock;
-    ngx_atomic_t    *own_lock;
-
-#endif
-
-    /* the links of the posted queue */
-    ngx_event_t     *next;
-    ngx_event_t    **prev;
+    unsigned         cancelable:1;
 
 
 #if 0
@@ -519,7 +494,6 @@ extern ngx_atomic_t  *ngx_stat_waiting;
 
 #define NGX_UPDATE_TIME         1
 #define NGX_POST_EVENTS         2
-#define NGX_POST_THREAD_EVENTS  4
 
 
 extern sig_atomic_t           ngx_event_timer_alarm;
