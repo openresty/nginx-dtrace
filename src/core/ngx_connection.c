@@ -411,12 +411,10 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
             if (bind(s, ls[i].sockaddr, ls[i].socklen) == -1) {
                 err = ngx_socket_errno;
 
-                if (err == NGX_EADDRINUSE && ngx_test_config) {
-                    continue;
+                if (err != NGX_EADDRINUSE || !ngx_test_config) {
+                    ngx_log_error(NGX_LOG_EMERG, log, err,
+                                  "bind() to %V failed", &ls[i].addr_text);
                 }
-
-                ngx_log_error(NGX_LOG_EMERG, log, err,
-                              "bind() to %V failed", &ls[i].addr_text);
 
                 if (ngx_close_socket(s) == -1) {
                     ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
@@ -428,7 +426,9 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                     return NGX_ERROR;
                 }
 
-                failed = 1;
+                if (!ngx_test_config) {
+                    failed = 1;
+                }
 
                 continue;
             }
@@ -951,39 +951,20 @@ ngx_close_connection(ngx_connection_t *c)
      * before we clean the connection
      */
 
-    ngx_mutex_lock(ngx_posted_events_mutex);
-
-    if (c->read->prev) {
-        ngx_delete_posted_event(c->read);
-    }
-
-    if (c->write->prev) {
-        ngx_delete_posted_event(c->write);
-    }
-
-    c->read->closed = 1;
-    c->write->closed = 1;
-
     ngx_unlock(&c->lock);
-    c->read->locked = 0;
-    c->write->locked = 0;
-
-    ngx_mutex_unlock(ngx_posted_events_mutex);
-
-#else
-
-    if (c->read->prev) {
-        ngx_delete_posted_event(c->read);
-    }
-
-    if (c->write->prev) {
-        ngx_delete_posted_event(c->write);
-    }
-
-    c->read->closed = 1;
-    c->write->closed = 1;
 
 #endif
+
+    if (c->read->posted) {
+        ngx_delete_posted_event(c->read);
+    }
+
+    if (c->write->posted) {
+        ngx_delete_posted_event(c->write);
+    }
+
+    c->read->closed = 1;
+    c->write->closed = 1;
 
     ngx_reusable_connection(c, 0);
 

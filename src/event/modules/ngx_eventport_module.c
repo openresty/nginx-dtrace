@@ -414,7 +414,8 @@ ngx_eventport_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
     ngx_err_t           err;
     ngx_int_t           instance;
     ngx_uint_t          i, level;
-    ngx_event_t        *ev, *rev, *wev, **queue;
+    ngx_event_t        *ev, *rev, *wev;
+    ngx_queue_t        *queue;
     ngx_connection_t   *c;
     struct timespec     ts, *tp;
 
@@ -465,8 +466,6 @@ ngx_eventport_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
                       "port_getn() returned no events without timeout");
         return NGX_ERROR;
     }
-
-    ngx_mutex_lock(ngx_posted_events_mutex);
 
     for (i = 0; i < events; i++) {
 
@@ -534,19 +533,13 @@ ngx_eventport_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
             wev->active = 0;
 
             if (revents & POLLIN) {
-
-                if ((flags & NGX_POST_THREAD_EVENTS) && !rev->accept) {
-                    rev->posted_ready = 1;
-
-                } else {
-                    rev->ready = 1;
-                }
+                rev->ready = 1;
 
                 if (flags & NGX_POST_EVENTS) {
-                    queue = (ngx_event_t **) (rev->accept ?
-                               &ngx_posted_accept_events : &ngx_posted_events);
+                    queue = rev->accept ? &ngx_posted_accept_events
+                                        : &ngx_posted_events;
 
-                    ngx_locked_post_event(rev, queue);
+                    ngx_post_event(rev, queue);
 
                 } else {
                     rev->handler(rev);
@@ -574,16 +567,10 @@ ngx_eventport_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
             }
 
             if (revents & POLLOUT) {
-
-                if (flags & NGX_POST_THREAD_EVENTS) {
-                    wev->posted_ready = 1;
-
-                } else {
-                    wev->ready = 1;
-                }
+                wev->ready = 1;
 
                 if (flags & NGX_POST_EVENTS) {
-                    ngx_locked_post_event(wev, &ngx_posted_events);
+                    ngx_post_event(wev, &ngx_posted_events);
 
                 } else {
                     wev->handler(wev);
@@ -599,8 +586,6 @@ ngx_eventport_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
             continue;
         }
     }
-
-    ngx_mutex_unlock(ngx_posted_events_mutex);
 
     return NGX_OK;
 }

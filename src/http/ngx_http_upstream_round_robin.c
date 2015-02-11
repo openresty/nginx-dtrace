@@ -10,6 +10,10 @@
 #include <ngx_http.h>
 
 
+#define ngx_http_upstream_tries(p) ((p)->number                               \
+                                    + ((p)->next ? (p)->next->number : 0))
+
+
 static ngx_http_upstream_rr_peer_t *ngx_http_upstream_get_peer(
     ngx_http_upstream_rr_peer_data_t *rrp);
 
@@ -255,7 +259,7 @@ ngx_http_upstream_init_round_robin_peer(ngx_http_request_t *r,
 
     r->upstream->peer.get = ngx_http_upstream_get_round_robin_peer;
     r->upstream->peer.free = ngx_http_upstream_free_round_robin_peer;
-    r->upstream->peer.tries = rrp->peers->number;
+    r->upstream->peer.tries = ngx_http_upstream_tries(rrp->peers);
 #if (NGX_HTTP_SSL)
     r->upstream->peer.set_session =
                                ngx_http_upstream_set_round_robin_peer_session;
@@ -374,7 +378,7 @@ ngx_http_upstream_create_round_robin_peer(ngx_http_request_t *r,
 
     r->upstream->peer.get = ngx_http_upstream_get_round_robin_peer;
     r->upstream->peer.free = ngx_http_upstream_free_round_robin_peer;
-    r->upstream->peer.tries = rrp->peers->number;
+    r->upstream->peer.tries = ngx_http_upstream_tries(rrp->peers);
 #if (NGX_HTTP_SSL)
     r->upstream->peer.set_session = ngx_http_upstream_empty_set_session;
     r->upstream->peer.save_session = ngx_http_upstream_empty_save_session;
@@ -432,10 +436,6 @@ ngx_http_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
 
     /* ngx_unlock_mutex(peers->mutex); */
 
-    if (pc->tries == 1 && peers->next) {
-        pc->tries += peers->next->number;
-    }
-
     return NGX_OK;
 
 failed:
@@ -447,7 +447,6 @@ failed:
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, pc->log, 0, "backup servers");
 
         rrp->peers = peers->next;
-        pc->tries = rrp->peers->number;
 
         n = (rrp->peers->number + (8 * sizeof(uintptr_t) - 1))
                 / (8 * sizeof(uintptr_t));
@@ -632,9 +631,8 @@ ngx_http_upstream_set_round_robin_peer_session(ngx_peer_connection_t *pc,
 
     rc = ngx_ssl_set_session(pc->connection, ssl_session);
 
-    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, pc->log, 0,
-                   "set session: %p:%d",
-                   ssl_session, ssl_session ? ssl_session->references : 0);
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pc->log, 0,
+                   "set session: %p", ssl_session);
 
     /* ngx_unlock_mutex(rrp->peers->mutex); */
 
@@ -657,8 +655,8 @@ ngx_http_upstream_save_round_robin_peer_session(ngx_peer_connection_t *pc,
         return;
     }
 
-    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, pc->log, 0,
-                   "save session: %p:%d", ssl_session, ssl_session->references);
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pc->log, 0,
+                   "save session: %p", ssl_session);
 
     peer = &rrp->peers->peer[rrp->current];
 
@@ -672,9 +670,8 @@ ngx_http_upstream_save_round_robin_peer_session(ngx_peer_connection_t *pc,
 
     if (old_ssl_session) {
 
-        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, pc->log, 0,
-                       "old session: %p:%d",
-                       old_ssl_session, old_ssl_session->references);
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pc->log, 0,
+                       "old session: %p", old_ssl_session);
 
         /* TODO: may block */
 
