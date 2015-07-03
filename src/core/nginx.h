@@ -9,8 +9,8 @@
 #define _NGINX_H_INCLUDED_
 
 
-#define nginx_version      1007010
-#define NGINX_VERSION      "1.7.10"
+#define nginx_version      1009002
+#define NGINX_VERSION      "1.9.2"
 #define NGINX_VER          "openresty/" NGINX_VERSION ".1rc0"
 
 #ifdef NGX_BUILD

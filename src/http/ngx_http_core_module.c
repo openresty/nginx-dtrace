@@ -27,6 +27,7 @@ static ngx_int_t ngx_http_core_find_static_location(ngx_http_request_t *r,
     ngx_http_location_tree_node_t *node);
 
 static ngx_int_t ngx_http_core_preconfiguration(ngx_conf_t *cf);
+static ngx_int_t ngx_http_core_postconfiguration(ngx_conf_t *cf);
 static void *ngx_http_core_create_main_conf(ngx_conf_t *cf);
 static char *ngx_http_core_init_main_conf(ngx_conf_t *cf, void *conf);
 static void *ngx_http_core_create_srv_conf(ngx_conf_t *cf);
@@ -54,6 +55,8 @@ static char *ngx_http_core_server_name(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_core_root(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_core_limit_except(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
+static char *ngx_http_core_set_aio(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_core_directio(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
@@ -96,18 +99,6 @@ static ngx_conf_post_t  ngx_http_core_lowat_post =
 static ngx_conf_post_handler_pt  ngx_http_core_pool_size_p =
     ngx_http_core_pool_size;
 
-static ngx_conf_deprecated_t  ngx_conf_deprecated_optimize_server_names = {
-    ngx_conf_deprecated, "optimize_server_names", "server_name_in_redirect"
-};
-
-static ngx_conf_deprecated_t  ngx_conf_deprecated_open_file_cache_retest = {
-    ngx_conf_deprecated, "open_file_cache_retest", "open_file_cache_valid"
-};
-
-static ngx_conf_deprecated_t  ngx_conf_deprecated_satisfy_any = {
-    ngx_conf_deprecated, "satisfy_any", "satisfy"
-};
-
 
 static ngx_conf_enum_t  ngx_http_core_request_body_in_file[] = {
     { ngx_string("off"), NGX_HTTP_REQUEST_BODY_FILE_OFF },
@@ -115,20 +106,6 @@ static ngx_conf_enum_t  ngx_http_core_request_body_in_file[] = {
     { ngx_string("clean"), NGX_HTTP_REQUEST_BODY_FILE_CLEAN },
     { ngx_null_string, 0 }
 };
-
-
-#if (NGX_HAVE_FILE_AIO)
-
-static ngx_conf_enum_t  ngx_http_core_aio[] = {
-    { ngx_string("off"), NGX_HTTP_AIO_OFF  },
-    { ngx_string("on"), NGX_HTTP_AIO_ON },
-#if (NGX_HAVE_AIO_SENDFILE)
-    { ngx_string("sendfile"), NGX_HTTP_AIO_SENDFILE },
-#endif
-    { ngx_null_string, 0 }
-};
-
-#endif
 
 
 static ngx_conf_enum_t  ngx_http_core_satisfy[] = {
@@ -268,13 +245,6 @@ static ngx_command_t  ngx_http_core_commands[] = {
       NGX_HTTP_SRV_CONF_OFFSET,
       offsetof(ngx_http_core_srv_conf_t, large_client_header_buffers),
       NULL },
-
-    { ngx_string("optimize_server_names"),
-      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_core_loc_conf_t, server_name_in_redirect),
-      &ngx_conf_deprecated_optimize_server_names },
 
     { ngx_string("ignore_invalid_headers"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_FLAG,
@@ -426,16 +396,12 @@ static ngx_command_t  ngx_http_core_commands[] = {
       offsetof(ngx_http_core_loc_conf_t, sendfile_max_chunk),
       NULL },
 
-#if (NGX_HAVE_FILE_AIO)
-
     { ngx_string("aio"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-      ngx_conf_set_enum_slot,
+      ngx_http_core_set_aio,
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_core_loc_conf_t, aio),
-      &ngx_http_core_aio },
-
-#endif
+      0,
+      NULL },
 
     { ngx_string("read_ahead"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
@@ -536,13 +502,6 @@ static ngx_command_t  ngx_http_core_commands[] = {
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_core_loc_conf_t, satisfy),
       &ngx_http_core_satisfy },
-
-    { ngx_string("satisfy_any"),
-      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_core_loc_conf_t, satisfy),
-      &ngx_conf_deprecated_satisfy_any },
 
     { ngx_string("internal"),
       NGX_HTTP_LOC_CONF|NGX_CONF_NOARGS,
@@ -715,13 +674,6 @@ static ngx_command_t  ngx_http_core_commands[] = {
       offsetof(ngx_http_core_loc_conf_t, open_file_cache_valid),
       NULL },
 
-    { ngx_string("open_file_cache_retest"),
-      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-      ngx_conf_set_sec_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_core_loc_conf_t, open_file_cache_valid),
-      &ngx_conf_deprecated_open_file_cache_retest },
-
     { ngx_string("open_file_cache_min_uses"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_num_slot,
@@ -806,7 +758,7 @@ static ngx_command_t  ngx_http_core_commands[] = {
 
 static ngx_http_module_t  ngx_http_core_module_ctx = {
     ngx_http_core_preconfiguration,        /* preconfiguration */
-    NULL,                                  /* postconfiguration */
+    ngx_http_core_postconfiguration,       /* postconfiguration */
 
     ngx_http_core_create_main_conf,        /* create main configuration */
     ngx_http_core_init_main_conf,          /* init main configuration */
@@ -1471,7 +1423,7 @@ ngx_http_update_location_config(ngx_http_request_t *r)
     }
 
     if (r == r->main) {
-        ngx_http_set_connection_log(r->connection, clcf->error_log);
+        ngx_set_connection_log(r->connection, clcf->error_log);
     }
 
     if ((ngx_io.flags & NGX_IO_SENDFILE) && clcf->sendfile) {
@@ -2254,7 +2206,7 @@ ngx_http_gzip_ok(ngx_http_request_t *r)
             return NGX_DECLINED;
         }
 
-        expires = ngx_http_parse_time(e->value.data, e->value.len);
+        expires = ngx_parse_http_time(e->value.data, e->value.len);
         if (expires == NGX_ERROR) {
             return NGX_DECLINED;
         }
@@ -2262,7 +2214,7 @@ ngx_http_gzip_ok(ngx_http_request_t *r)
         d = r->headers_out.date;
 
         if (d) {
-            date = ngx_http_parse_time(d->value.data, d->value.len);
+            date = ngx_parse_http_time(d->value.data, d->value.len);
             if (date == NGX_ERROR) {
                 return NGX_DECLINED;
             }
@@ -3451,6 +3403,15 @@ ngx_http_core_preconfiguration(ngx_conf_t *cf)
 }
 
 
+static ngx_int_t
+ngx_http_core_postconfiguration(ngx_conf_t *cf)
+{
+    ngx_http_top_request_body_filter = ngx_http_request_body_save_filter;
+
+    return NGX_OK;
+}
+
+
 static void *
 ngx_http_core_create_main_conf(ngx_conf_t *cf)
 {
@@ -3654,8 +3615,10 @@ ngx_http_core_create_loc_conf(ngx_conf_t *cf)
     clcf->internal = NGX_CONF_UNSET;
     clcf->sendfile = NGX_CONF_UNSET;
     clcf->sendfile_max_chunk = NGX_CONF_UNSET_SIZE;
-#if (NGX_HAVE_FILE_AIO)
     clcf->aio = NGX_CONF_UNSET;
+#if (NGX_THREADS)
+    clcf->thread_pool = NGX_CONF_UNSET_PTR;
+    clcf->thread_pool_value = NGX_CONF_UNSET_PTR;
 #endif
     clcf->read_ahead = NGX_CONF_UNSET_SIZE;
     clcf->directio = NGX_CONF_UNSET;
@@ -3870,8 +3833,13 @@ ngx_http_core_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->sendfile, prev->sendfile, 0);
     ngx_conf_merge_size_value(conf->sendfile_max_chunk,
                               prev->sendfile_max_chunk, 0);
-#if (NGX_HAVE_FILE_AIO)
+#if (NGX_HAVE_FILE_AIO || NGX_THREADS)
     ngx_conf_merge_value(conf->aio, prev->aio, NGX_HTTP_AIO_OFF);
+#endif
+#if (NGX_THREADS)
+    ngx_conf_merge_ptr_value(conf->thread_pool, prev->thread_pool, NULL);
+    ngx_conf_merge_ptr_value(conf->thread_pool_value, prev->thread_pool_value,
+                             NULL);
 #endif
     ngx_conf_merge_size_value(conf->read_ahead, prev->read_ahead, 0);
     ngx_conf_merge_off_value(conf->directio, prev->directio,
@@ -4209,6 +4177,19 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                                "on this platform");
             return NGX_CONF_ERROR;
 #endif
+        }
+
+        if (ngx_strcmp(value[n].data, "reuseport") == 0) {
+#if (NGX_HAVE_REUSEPORT)
+            lsopt.reuseport = 1;
+            lsopt.set = 1;
+            lsopt.bind = 1;
+#else
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "reuseport is not supported "
+                               "on this platform, ignored");
+#endif
+            continue;
         }
 
         if (ngx_strcmp(value[n].data, "ssl") == 0) {
@@ -4663,6 +4644,116 @@ ngx_http_core_limit_except(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     *cf = save;
 
     return rv;
+}
+
+
+static char *
+ngx_http_core_set_aio(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_core_loc_conf_t *clcf = conf;
+
+    ngx_str_t  *value;
+
+    if (clcf->aio != NGX_CONF_UNSET) {
+        return "is duplicate";
+    }
+
+#if (NGX_THREADS)
+    clcf->thread_pool = NULL;
+    clcf->thread_pool_value = NULL;
+#endif
+
+    value = cf->args->elts;
+
+    if (ngx_strcmp(value[1].data, "off") == 0) {
+        clcf->aio = NGX_HTTP_AIO_OFF;
+        return NGX_CONF_OK;
+    }
+
+    if (ngx_strcmp(value[1].data, "on") == 0) {
+#if (NGX_HAVE_FILE_AIO)
+        clcf->aio = NGX_HTTP_AIO_ON;
+        return NGX_CONF_OK;
+#else
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "\"aio on\" "
+                           "is unsupported on this platform");
+        return NGX_CONF_ERROR;
+#endif
+    }
+
+#if (NGX_HAVE_AIO_SENDFILE)
+
+    if (ngx_strcmp(value[1].data, "sendfile") == 0) {
+        clcf->aio = NGX_HTTP_AIO_ON;
+
+        ngx_conf_log_error(NGX_LOG_WARN, cf, 0,
+                           "the \"sendfile\" parameter of "
+                           "the \"aio\" directive is deprecated");
+        return NGX_CONF_OK;
+    }
+
+#endif
+
+    if (ngx_strncmp(value[1].data, "threads", 7) == 0
+        && (value[1].len == 7 || value[1].data[7] == '='))
+    {
+#if (NGX_THREADS)
+        ngx_str_t                          name;
+        ngx_thread_pool_t                 *tp;
+        ngx_http_complex_value_t           cv;
+        ngx_http_compile_complex_value_t   ccv;
+
+        clcf->aio = NGX_HTTP_AIO_THREADS;
+
+        if (value[1].len >= 8) {
+            name.len = value[1].len - 8;
+            name.data = value[1].data + 8;
+
+            ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+            ccv.cf = cf;
+            ccv.value = &name;
+            ccv.complex_value = &cv;
+
+            if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+
+            if (cv.lengths != NULL) {
+                clcf->thread_pool_value = ngx_palloc(cf->pool,
+                                    sizeof(ngx_http_complex_value_t));
+                if (clcf->thread_pool_value == NULL) {
+                    return NGX_CONF_ERROR;
+                }
+
+                *clcf->thread_pool_value = cv;
+
+                return NGX_CONF_OK;
+            }
+
+            tp = ngx_thread_pool_add(cf, &name);
+
+        } else {
+            tp = ngx_thread_pool_add(cf, NULL);
+        }
+
+        if (tp == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        clcf->thread_pool = tp;
+
+        return NGX_CONF_OK;
+#else
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "\"aio threads\" "
+                           "is unsupported on this platform");
+        return NGX_CONF_ERROR;
+#endif
+    }
+
+    return "invalid value";
 }
 
 

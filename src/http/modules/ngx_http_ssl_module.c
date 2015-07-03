@@ -561,7 +561,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
                          prev->prefer_server_ciphers, 0);
 
     ngx_conf_merge_bitmask_value(conf->protocols, prev->protocols,
-                         (NGX_CONF_BITMASK_SET|NGX_SSL_SSLv3|NGX_SSL_TLSv1
+                         (NGX_CONF_BITMASK_SET|NGX_SSL_TLSv1
                           |NGX_SSL_TLSv1_1|NGX_SSL_TLSv1_2));
 
     ngx_conf_merge_size_value(conf->buffer_size, prev->buffer_size,
@@ -715,8 +715,10 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         SSL_CTX_set_options(conf->ssl.ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
     }
 
+#ifndef LIBRESSL_VERSION_NUMBER
     /* a temporary 512-bit RSA key is required for export versions of MSIE */
     SSL_CTX_set_tmp_rsa_callback(conf->ssl.ctx, ngx_ssl_rsa512_key_callback);
+#endif
 
     if (ngx_ssl_dhparam(cf, &conf->ssl, &conf->dhparam) != NGX_OK) {
         return NGX_CONF_ERROR;
