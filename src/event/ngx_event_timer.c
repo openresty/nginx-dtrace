@@ -91,6 +91,8 @@ ngx_event_expire_timers(void)
 
         ev->timedout = 1;
 
+        ngx_event_probe_timer_expire(ev);
+
         ev->handler(ev);
     }
 }
