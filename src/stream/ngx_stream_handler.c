@@ -23,6 +23,7 @@ static void ngx_stream_ssl_handshake_handler(ngx_connection_t *c);
 void
 ngx_stream_init_connection(ngx_connection_t *c)
 {
+    int                           tcp_nodelay;
     u_char                        text[NGX_SOCKADDR_STRLEN];
     size_t                        len;
     ngx_int_t                     rc;
@@ -147,6 +148,15 @@ ngx_stream_init_connection(ngx_connection_t *c)
 
     cmcf = ngx_stream_get_module_main_conf(s, ngx_stream_core_module);
 
+    if (cmcf->limit_conn_handler) {
+        rc = cmcf->limit_conn_handler(s);
+
+        if (rc != NGX_DECLINED) {
+            ngx_stream_close_connection(c);
+            return;
+        }
+    }
+
     if (cmcf->access_handler) {
         rc = cmcf->access_handler(s);
 
@@ -155,6 +165,24 @@ ngx_stream_init_connection(ngx_connection_t *c)
             return;
         }
     }
+
+    if (cscf->tcp_nodelay && c->tcp_nodelay == NGX_TCP_NODELAY_UNSET) {
+        ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "tcp_nodelay");
+
+        tcp_nodelay = 1;
+
+        if (setsockopt(c->fd, IPPROTO_TCP, TCP_NODELAY,
+                       (const void *) &tcp_nodelay, sizeof(int)) == -1)
+        {
+            ngx_connection_error(c, ngx_socket_errno,
+                                 "setsockopt(TCP_NODELAY) failed");
+            ngx_stream_close_connection(c);
+            return;
+        }
+
+        c->tcp_nodelay = NGX_TCP_NODELAY_SET;
+    }
+
 
 #if (NGX_STREAM_SSL)
     {
@@ -300,9 +328,11 @@ ngx_stream_log_error(ngx_log_t *log, u_char *buf, size_t len)
     p = ngx_snprintf(buf, len, ", client: %V, server: %V",
                      &s->connection->addr_text,
                      &s->connection->listening->addr_text);
+    len -= p - buf;
+    buf = p;
 
     if (s->log_handler) {
-        return s->log_handler(log, p, len);
+        p = s->log_handler(log, buf, len);
     }
 
     return p;

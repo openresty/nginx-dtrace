@@ -83,11 +83,12 @@ typedef struct {
     ngx_buf_t                          downstream_buf;
     ngx_buf_t                          upstream_buf;
     off_t                              received;
+    time_t                             start_sec;
 #if (NGX_STREAM_SSL)
     ngx_str_t                          ssl_name;
 #endif
-    ngx_uint_t                         proxy_protocol;
-                                               /* unsigned  proxy_protocol:1; */
+    unsigned                           connected:1;
+    unsigned                           proxy_protocol:1;
 } ngx_stream_upstream_t;
 
 

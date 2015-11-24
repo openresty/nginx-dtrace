@@ -136,7 +136,7 @@ fi
 CFLAGS="$CFLAGS $NGX_CC_OPT"
 NGX_TEST_LD_OPT="$NGX_LD_OPT"
 
-if [ "$NGX_PLATFORM" != win32 ]; then
+if [ 1 ]; then
 
     if test -n "$NGX_LD_OPT"; then
         ngx_feature=--with-ld-opt=\"$NGX_LD_OPT\"

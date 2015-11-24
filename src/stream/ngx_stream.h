@@ -118,6 +118,7 @@ typedef ngx_int_t (*ngx_stream_access_pt)(ngx_stream_session_t *s);
 typedef struct {
     ngx_array_t             servers;     /* ngx_stream_core_srv_conf_t */
     ngx_array_t             listen;      /* ngx_stream_listen_t */
+    ngx_stream_access_pt    limit_conn_handler;
     ngx_stream_access_pt    access_handler;
 } ngx_stream_core_main_conf_t;
 
@@ -131,6 +132,7 @@ typedef struct {
     u_char                 *file_name;
     ngx_int_t               line;
     ngx_log_t              *error_log;
+    ngx_flag_t              tcp_nodelay;
 } ngx_stream_core_srv_conf_t;
 
 
