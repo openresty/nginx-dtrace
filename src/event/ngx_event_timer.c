@@ -8,6 +8,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_event.h>
+#include <ngx_event_probe.h>
 
 
 ngx_rbtree_t              ngx_event_timer_rbtree;
@@ -138,3 +139,19 @@ ngx_event_cancel_timers(void)
         ev->handler(ev);
     }
 }
+
+
+#if (NGX_DTRACE)
+void
+ngx_event_probe_timer_add_helper(ngx_event_t *ev, ngx_msec_t timer)
+{
+    ngx_event_probe_timer_add(ev, timer);
+}
+
+
+void
+ngx_event_probe_timer_del_helper(ngx_event_t *ev)
+{
+    ngx_event_probe_timer_del(ev);
+}
+#endif
