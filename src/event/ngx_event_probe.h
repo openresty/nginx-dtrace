@@ -9,13 +9,6 @@
 
 #if (NGX_DTRACE)
 
-#if (NGX_THREADS)
-#   ifndef NGX_DEFINE_THREAD_POOL_T
-#   define NGX_DEFINE_THREAD_POOL_T 1
-typedef struct ngx_thread_pool_s  ngx_thread_pool_t;
-#   endif
-#endif
-
 #include <ngx_http.h>
 #include <ngx_dtrace_provider.h>
 

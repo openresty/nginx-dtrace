@@ -23,10 +23,7 @@ struct ngx_thread_task_s {
 };
 
 
-#ifndef NGX_DEFINE_THREAD_POOL_T
-#define NGX_DEFINE_THREAD_POOL_T 1
 typedef struct ngx_thread_pool_s  ngx_thread_pool_t;
-#endif
 
 
 ngx_thread_pool_t *ngx_thread_pool_add(ngx_conf_t *cf, ngx_str_t *name);
