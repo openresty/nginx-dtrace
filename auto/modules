@@ -75,7 +75,8 @@ if :; then
                      src/http/ngx_http_variables.h \
                      src/http/ngx_http_script.h \
                      src/http/ngx_http_upstream.h \
-                     src/http/ngx_http_upstream_round_robin.h"
+                     src/http/ngx_http_upstream_round_robin.h \
+                     src/http/ngx_http_probe.h"
     ngx_module_srcs="src/http/ngx_http.c \
                      src/http/ngx_http_core_module.c \
                      src/http/ngx_http_special_response.c \
