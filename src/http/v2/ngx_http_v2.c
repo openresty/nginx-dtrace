@@ -251,7 +251,7 @@ ngx_http_v2_init(ngx_event_t *rev)
         return;
     }
 
-    cln = ngx_pool_cleanup_add(c->pool, sizeof(ngx_pool_cleanup_file_t));
+    cln = ngx_pool_cleanup_add(c->pool, 0);
     if (cln == NULL) {
         ngx_http_close_connection(c);
         return;
@@ -1185,6 +1185,8 @@ ngx_http_v2_state_headers(ngx_http_v2_connection_t *h2c, u_char *pos,
         return ngx_http_v2_connection_error(h2c, NGX_HTTP_V2_INTERNAL_ERROR);
     }
 
+    stream->request->request_length = h2c->state.length;
+
     stream->in_closed = h2c->state.flags & NGX_HTTP_V2_END_STREAM_FLAG;
     stream->node = node;
 
@@ -1731,10 +1733,20 @@ ngx_http_v2_handle_continuation(ngx_http_v2_connection_t *h2c, u_char *pos,
     u_char *end, ngx_http_v2_handler_pt handler)
 {
     u_char    *p;
-    size_t     len;
+    size_t     len, skip;
     uint32_t   head;
 
     len = h2c->state.length;
+
+    if (h2c->state.padding && (size_t) (end - pos) > len) {
+        skip = ngx_min(h2c->state.padding, (end - pos) - len);
+
+        h2c->state.padding -= skip;
+
+        p = pos;
+        pos += skip;
+        ngx_memmove(pos, p, len);
+    }
 
     if ((size_t) (end - pos) < len + NGX_HTTP_V2_FRAME_HEADER_SIZE) {
         return ngx_http_v2_state_save(h2c, pos, end, handler);
@@ -1751,7 +1763,6 @@ ngx_http_v2_handle_continuation(ngx_http_v2_connection_t *h2c, u_char *pos,
         return ngx_http_v2_connection_error(h2c, NGX_HTTP_V2_PROTOCOL_ERROR);
     }
 
-    h2c->state.length += ngx_http_v2_parse_length(head);
     h2c->state.flags |= p[4];
 
     if (h2c->state.sid != ngx_http_v2_parse_sid(&p[5])) {
@@ -1765,6 +1776,14 @@ ngx_http_v2_handle_continuation(ngx_http_v2_connection_t *h2c, u_char *pos,
     pos += NGX_HTTP_V2_FRAME_HEADER_SIZE;
 
     ngx_memcpy(pos, p, len);
+
+    len = ngx_http_v2_parse_length(head);
+
+    h2c->state.length += len;
+
+    if (h2c->state.stream) {
+        h2c->state.stream->request->request_length += len;
+    }
 
     h2c->state.handler = handler;
     return pos;
@@ -3293,9 +3312,6 @@ ngx_http_v2_construct_request_line(ngx_http_request_t *r)
     p = ngx_cpymem(p, r->unparsed_uri.data, r->unparsed_uri.len);
 
     ngx_memcpy(p, ending, sizeof(ending));
-
-    /* some modules expect the space character after method name */
-    r->method_name.data = r->request_line.data;
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "http2 http request line: \"%V\"", &r->request_line);

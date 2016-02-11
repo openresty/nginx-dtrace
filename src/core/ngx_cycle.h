@@ -48,6 +48,10 @@ struct ngx_cycle_s {
     ngx_connection_t         *free_connections;
     ngx_uint_t                free_connection_n;
 
+    ngx_module_t            **modules;
+    ngx_uint_t                modules_n;
+    ngx_uint_t                modules_used;    /* unsigned  modules_used:1; */
+
     ngx_queue_t               reusable_connections_queue;
 
     ngx_array_t               listening;
@@ -88,6 +92,7 @@ typedef struct {
 
      int                      priority;
 
+     ngx_uint_t               cpu_affinity_auto;
      ngx_uint_t               cpu_affinity_n;
      uint64_t                *cpu_affinity;
 

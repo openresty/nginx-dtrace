@@ -1210,6 +1210,23 @@ ngx_ssl_handshake(ngx_connection_t *c)
         return NGX_AGAIN;
     }
 
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+    if (sslerr == SSL_ERROR_WANT_X509_LOOKUP) {
+        c->read->handler = ngx_ssl_handshake_handler;
+        c->write->handler = ngx_ssl_handshake_handler;
+
+        if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        return NGX_AGAIN;
+    }
+#endif
+
     err = (sslerr == SSL_ERROR_SYSCALL) ? ngx_errno : 0;
 
     c->ssl->no_wait_shutdown = 1;
